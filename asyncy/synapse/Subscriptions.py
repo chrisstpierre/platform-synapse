@@ -46,5 +46,6 @@ class Subscriptions:
         """
         s = await DB.get_subscription(sub_id)
         if s.container_id != container_id:
+            logger.debug(f'Re-subscribing {sub_id}...')
             await cls._subscribe(s.url, s.method.upper(), s.payload)
             await DB.update_container(sub_id, container_id)

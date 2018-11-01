@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
+from typing import Iterator
 
 import psycopg2
 
@@ -62,6 +63,32 @@ class DB:
                         'where uuid=%s',
                         (container_id, sub_id))
             conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+    @classmethod
+    async def stream_all_subscriptions(cls) -> Iterator[Subscription]:
+        conn = cls.conn()
+        cur = conn.cursor()
+        try:
+            # TODO: make this async/await
+            cur.execute('select '
+                        'uuid, app_uuid, container_id, url, '
+                        'method, payload, pod_name '
+                        'from app_runtime.subscriptions')
+
+            while True:
+                subscriptions = cur.fetchmany(size=100)
+
+                if len(subscriptions) == 0:
+                    break
+
+                for s in subscriptions:
+                    yield Subscription(
+                        uuid=s[0], app_uuid=s[1], container_id=s[2],
+                        url=s[3], method=s[4], payload=s[5], pod_name=s[6])
+
         finally:
             cur.close()
             conn.close()

@@ -22,4 +22,4 @@ class SubscriptionHandler(tornado.web.RequestHandler):
                                    sub_body=sub_body, pod_name=pod_name,
                                    app_id=app_id, sub_method=sub_method,
                                    container_id=c_id)
-        await Kubernetes.watch(pod_name, app_id, sub_id)
+        await Kubernetes.create_watch(pod_name, app_id, sub_id)

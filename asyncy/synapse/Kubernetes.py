@@ -61,6 +61,6 @@ class Kubernetes:
                 await Subscriptions.resubscribe(sub_id, s[0].container_id)
 
     @classmethod
-    async def watch(cls, pod_name, namespace, sub_id):
+    async def create_watch(cls, pod_name, namespace, sub_id):
         loop = asyncio.get_event_loop()
         loop.create_task(cls._watch(pod_name, namespace, sub_id))
