@@ -1,0 +1,3 @@
+psycopg2==2.7.5
+kubernetes_asyncio==7.0.0
+tornado==5.1.1
