@@ -8,7 +8,7 @@ from .DB import DB
 
 from .Logger import Logger
 
-logger = Logger.get('Kubernetes')
+logger = Logger.get('Subscriptions')
 
 
 class Subscriptions:
