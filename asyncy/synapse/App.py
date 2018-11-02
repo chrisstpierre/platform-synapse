@@ -4,16 +4,20 @@ import asyncio
 import tornado.ioloop
 import tornado.web
 
-from .Subscriptions import Subscriptions
-from .Entities import Subscription
 from .DB import DB
+from .Entities import Subscription
 from .Kubernetes import Kubernetes
+from .Subscriptions import Subscriptions
+from .handlers.ClearSubscriptions import ClearSubscriptions
 from .handlers.SubscriptionHandler import SubscriptionHandler
+from .handlers.UnsubscribeHandler import UnsubscribeHandler
 
 
 def make_app():
     return tornado.web.Application([
         (r'/subscribe', SubscriptionHandler),
+        (r'/unsubscribe', UnsubscribeHandler),
+        (r'/clear_all', ClearSubscriptions)
     ])
 
 

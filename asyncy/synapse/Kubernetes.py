@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 import asyncio
+from typing import MutableMapping
+
 from kubernetes_asyncio import client, config, watch
 
-from .Subscriptions import Subscriptions
 from .Logger import Logger
+from .Subscriptions import Subscriptions
 
 logger = Logger.get('Kubernetes')
 
@@ -11,6 +13,17 @@ logger = Logger.get('Kubernetes')
 class Kubernetes:
     v1: client.CoreV1Api = None
     loop = asyncio.new_event_loop()
+
+    sub_lock = asyncio.Lock()
+
+    subscriptions: MutableMapping[str, MutableMapping[str, asyncio.Task]] = {}
+    """
+    Map: <app_id, <subscription_id: task>>
+    Holds a reference for every Kubernetes#_watch() task created, keyed
+    by the app_id, followed by the subscription ID.
+
+    This helps in removing an active watch from an individual subscription.
+    """
 
     @classmethod
     async def init(cls):
@@ -47,20 +60,59 @@ class Kubernetes:
         await cls.ensure_one_pod(namespace, pod_name)
 
         w = watch.Watch()
-        async for event in w.stream(cls.v1.list_namespaced_pod, namespace,
-                                    label_selector=f'app={pod_name}'):
-            et = event['type'].lower()
+        try:
+            async for event in w.stream(cls.v1.list_namespaced_pod, namespace,
+                                        label_selector=f'app={pod_name}'):
+                et = event['type'].lower()
 
-            if et != 'modified':
-                continue
+                if et != 'modified':
+                    continue
 
-            # Pod might have been modified.
-            s = event['object'].status.container_statuses
-            if s and s[0].state.running:
-                logger.info(f'Potentially re-subscribing {sub_id}...')
-                await Subscriptions.resubscribe(sub_id, s[0].container_id)
+                # Pod might have been modified.
+                s = event['object'].status.container_statuses
+                if s and s[0].state.running:
+                    logger.info(f'Potentially re-subscribing {sub_id}...')
+                    await Subscriptions.resubscribe(sub_id, s[0].container_id)
+        except asyncio.CancelledError:
+            w.stop()
+        finally:
+            logger.debug(f'Stopped watching for Pod changes '
+                         f'on {pod_name} for {sub_id} ')
 
     @classmethod
     async def create_watch(cls, pod_name, namespace, sub_id):
         loop = asyncio.get_event_loop()
-        loop.create_task(cls._watch(pod_name, namespace, sub_id))
+        task = loop.create_task(cls._watch(pod_name, namespace, sub_id))
+
+        async with cls.sub_lock:
+            app_subs = cls.subscriptions.setdefault(namespace, {})
+            task_to_be_cancelled = app_subs.get(sub_id)
+            app_subs[sub_id] = task
+
+        # Ideally there will never be a pending watch task to be cancelled,
+        # as subscription IDs are unique. This is just in case, as we do
+        # not want to have unnecessary watches setup with Kubernetes.
+        if task_to_be_cancelled is not None:
+            task_to_be_cancelled.cancel()
+
+    @classmethod
+    async def remove_watches(cls, app_id: str):
+        async with cls.sub_lock:
+            subscriptions = cls.subscriptions.get(app_id)
+            if subscriptions:
+                del cls.subscriptions[app_id]
+
+        if subscriptions:
+            for sub_id, task in subscriptions.items():
+                task.cancel()
+
+    @classmethod
+    async def remove_watch(cls, app_id: str, sub_id: str):
+        async with cls.sub_lock:
+            subscriptions = cls.subscriptions.get(app_id, {})
+            task = subscriptions.get(sub_id)
+            if task:
+                del subscriptions[sub_id]
+
+        if task:
+            task.cancel()
