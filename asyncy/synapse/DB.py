@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
-from typing import Iterator
+from typing import AsyncIterator
 
 import psycopg2
 
@@ -68,7 +68,7 @@ class DB:
             conn.close()
 
     @classmethod
-    async def stream_all_subscriptions(cls) -> Iterator[Subscription]:
+    async def stream_all_subscriptions(cls) -> AsyncIterator[Subscription]:
         conn = cls.conn()
         cur = conn.cursor()
         try:
