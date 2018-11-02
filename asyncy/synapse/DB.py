@@ -4,8 +4,8 @@ from typing import AsyncIterator
 
 import psycopg2
 
-from .Entities import Subscription
 from .Config import Config
+from .Entities import Subscription
 
 
 class DB:
@@ -56,6 +56,8 @@ class DB:
     async def update_container(cls, sub_id, container_id):
         conn = cls.conn()
         cur = conn.cursor()
+        # TODO: add optimistic concurrency here to ensure
+        # TODO: that two tasks don't compete.
         try:
             # TODO: make this async/await
             cur.execute('update app_runtime.subscriptions '
@@ -89,6 +91,34 @@ class DB:
                         uuid=s[0], app_uuid=s[1], container_id=s[2],
                         url=s[3], method=s[4], payload=s[5], pod_name=s[6])
 
+        finally:
+            cur.close()
+            conn.close()
+
+    @classmethod
+    async def delete_all_subscriptions(cls, app_id: str):
+        conn = cls.conn()
+        cur = conn.cursor()
+        try:
+            # TODO: make this async/await
+            cur.execute('delete from app_runtime.subscriptions '
+                        'where app_uuid=%s',
+                        (app_id,))
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+    @classmethod
+    async def delete_one_subscription(cls, app_id: str, sub_id: str):
+        conn = cls.conn()
+        cur = conn.cursor()
+        try:
+            # TODO: make this async/await
+            cur.execute('delete from app_runtime.subscriptions '
+                        'where app_uuid=%s and uuid=%s',
+                        (app_id, sub_id))
+            conn.commit()
         finally:
             cur.close()
             conn.close()
