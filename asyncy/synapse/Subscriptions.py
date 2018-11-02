@@ -36,7 +36,7 @@ class Subscriptions:
             },
             'body': json.dumps(payload)
         }
-        await HttpHelper.fetch_with_retry(3, logger, url, client, kwargs)
+        await HttpHelper.fetch_with_retry(30, logger, url, client, kwargs)
 
     @classmethod
     async def resubscribe(cls, sub_id, container_id):
