@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import signal
 
 import tornado.ioloop
 import tornado.web
@@ -34,10 +35,25 @@ async def init():
             await Kubernetes.create_watch(s.pod_name, s.app_uuid, s.uuid)
 
 
+def sig_handler(*args, **kwargs):
+    tornado.ioloop.IOLoop.instance().add_callback(shutdown)
+    pass
+
+
+async def shutdown():
+    io_loop = tornado.ioloop.IOLoop.instance()
+    io_loop.stop()
+    loop = asyncio.get_event_loop()
+    loop.stop()
+
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     loop.create_task(Kubernetes.init())
     loop.create_task(init())
+
+    signal.signal(signal.SIGTERM, sig_handler)
+    signal.signal(signal.SIGINT, sig_handler)
+
     app = make_app()
     app.listen(8080)
     tornado.ioloop.IOLoop.current().start()
