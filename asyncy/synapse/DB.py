@@ -21,8 +21,8 @@ class DB:
         try:
             # TODO: make this async/await
             cur.execute('insert into app_runtime.subscriptions '
-                        '(uuid, app_uuid, container_id, url, '
-                        'method, payload, pod_name)'
+                        '(uuid, app_uuid, k8s_container_id, url, '
+                        'method, payload, k8s_pod_name)'
                         ' values '
                         '(%s, %s, %s, %s, %s, %s, %s)',
                         (s.uuid, s.app_uuid, s.container_id, s.url, s.method,
@@ -39,8 +39,8 @@ class DB:
         # TODO: make this async/await
         try:
             cur.execute('select '
-                        'uuid, app_uuid, container_id, url, '
-                        'method, payload, pod_name '
+                        'uuid, app_uuid, k8s_container_id, url, '
+                        'method, payload, k8s_pod_name '
                         'from app_runtime.subscriptions '
                         'where uuid=%s', (sub_id,))
             r = cur.fetchone()
@@ -76,8 +76,8 @@ class DB:
         try:
             # TODO: make this async/await
             cur.execute('select '
-                        'uuid, app_uuid, container_id, url, '
-                        'method, payload, pod_name '
+                        'uuid, app_uuid, k8s_container_id, url, '
+                        'method, payload, k8s_pod_name '
                         'from app_runtime.subscriptions')
 
             while True:
