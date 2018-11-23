@@ -31,13 +31,8 @@ class Kubernetes:
     @classmethod
     async def init(cls):
         logger.info('Init!')
-        if Config.CLUSTER_CERT != '':
-            configuration = Configuration()
-            configuration.host = f'https://{Config.CLUSTER_HOST}'
-            configuration.ssl_ca_cert = f'{Config.CLUSTER_CERT}'
-            configuration.api_key['authorization'] = \
-                f'bearer {Config.CLUSTER_AUTH_TOKEN}'
-            Configuration.set_default(configuration)
+        if Config.IN_CLUSTER:
+            config.load_incluster_config()
         else:
             await config.load_kube_config()
         cls.v1 = client.CoreV1Api()
