@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 import asyncio
+
+from kubernetes_asyncio.client import Configuration
 from typing import MutableMapping
 
 from kubernetes_asyncio import client, config, watch
 
+from .Config import Config
 from .Logger import Logger
 from .Subscriptions import Subscriptions
 
@@ -27,9 +30,16 @@ class Kubernetes:
 
     @classmethod
     async def init(cls):
-        # TODO: support in-cluster config
         logger.info('Init!')
-        await config.load_kube_config()
+        if Config.CLUSTER_CERT != '':
+            configuration = Configuration()
+            configuration.host = f'https://{Config.CLUSTER_HOST}'
+            configuration.ssl_ca_cert = f'{Config.CLUSTER_CERT}'
+            configuration.api_key['authorization'] = \
+                f'bearer {Config.CLUSTER_AUTH_TOKEN}'
+            Configuration.set_default(configuration)
+        else:
+            await config.load_kube_config()
         cls.v1 = client.CoreV1Api()
 
     @classmethod
