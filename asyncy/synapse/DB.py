@@ -61,7 +61,7 @@ class DB:
         try:
             # TODO: make this async/await
             cur.execute('update app_runtime.subscriptions '
-                        'set container_id=%s '
+                        'set k8s_container_id=%s '
                         'where uuid=%s',
                         (container_id, sub_id))
             conn.commit()
