@@ -3,6 +3,7 @@ import json
 from tornado.httpclient import AsyncHTTPClient
 
 from .Entities import Subscription
+from .Exceptions import NotFoundException
 from .helpers.HttpHelper import HttpHelper
 from .DB import DB
 
@@ -47,7 +48,12 @@ class Subscriptions:
         Check if the container ID has actually changed against the DB,
         and if it has, resubscribe with retry.
         """
-        s = await DB.get_subscription(sub_id)
+        try:
+            s = await DB.get_subscription(sub_id)
+        except NotFoundException:
+            logger.warning(f'Did not find a subscription for {sub_id}!')
+            raise
+
         if s.container_id != container_id:
             logger.debug(f'Re-subscribing {sub_id}...')
             await cls._subscribe(s.url, s.method.upper(), s.payload)
