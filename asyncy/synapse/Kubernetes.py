@@ -37,13 +37,21 @@ class Kubernetes:
             await config.load_kube_config()
         cls.v1 = client.CoreV1Api()
 
+    @staticmethod
+    def resolve_namespace(app_id: str, pod_name: str) -> str:
+        if pod_name == 'gateway':
+            return 'asyncy-system'
+
+        return app_id
+
     @classmethod
-    async def get_container_id(cls, namespace: str, pod_name: str) -> str:
+    async def get_container_id(cls, app_id: str, pod_name: str) -> str:
         """
         Asyncy provisions Pods via a Deployment, with a single container
         in each Pod. This method returns the first container ID associated
         with this Pod.
         """
+        namespace = cls.resolve_namespace(app_id, pod_name)
         r = await cls.v1.list_namespaced_pod(namespace,
                                              label_selector=f'app={pod_name}')
         assert len(r.items) == 1
@@ -51,18 +59,20 @@ class Kubernetes:
         return pod.status.container_statuses[0].container_id
 
     @classmethod
-    async def ensure_one_pod(cls, namespace, label):
+    async def ensure_one_pod(cls, app_id, label):
+        namespace = cls.resolve_namespace(app_id, label)
         r = await cls.v1.list_namespaced_pod(namespace,
                                              label_selector=f'app={label}')
         assert len(r.items) == 1, \
             f'{len(r.items)} pods found for label app={label}'
 
     @classmethod
-    async def _watch(cls, pod_name, namespace, sub_id):
-        logger.debug(f'Watching for Pod modified events '
-                     f'on {pod_name} for {sub_id}')
+    async def _watch(cls, pod_name, app_id, sub_id):
+        await cls.ensure_one_pod(app_id, pod_name)
 
-        await cls.ensure_one_pod(namespace, pod_name)
+        namespace = cls.resolve_namespace(app_id, pod_name)
+        logger.debug(f'Watching for Pod modified events '
+                     f'on {pod_name} for {namespace}')
 
         w = watch.Watch()
         try:
@@ -85,12 +95,12 @@ class Kubernetes:
                          f'on {pod_name} for {sub_id} ')
 
     @classmethod
-    async def create_watch(cls, pod_name, namespace, sub_id):
+    async def create_watch(cls, pod_name, app_id, sub_id):
         loop = asyncio.get_event_loop()
-        task = loop.create_task(cls._watch(pod_name, namespace, sub_id))
+        task = loop.create_task(cls._watch(pod_name, app_id, sub_id))
 
         async with cls.sub_lock:
-            app_subs = cls.subscriptions.setdefault(namespace, {})
+            app_subs = cls.subscriptions.setdefault(app_id, {})
             task_to_be_cancelled = app_subs.get(sub_id)
             app_subs[sub_id] = task
 
