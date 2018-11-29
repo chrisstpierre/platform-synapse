@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 import asyncio
-
-from kubernetes_asyncio.client import Configuration
-from typing import MutableMapping
+import threading
+from typing import List, MutableMapping
 
 from kubernetes_asyncio import client, config, watch
 
 from .Config import Config
+from .Exceptions import NotFoundException
 from .Logger import Logger
 from .Subscriptions import Subscriptions
 
@@ -19,13 +19,9 @@ class Kubernetes:
 
     sub_lock = asyncio.Lock()
 
-    subscriptions: MutableMapping[str, MutableMapping[str, asyncio.Task]] = {}
+    subscriptions: MutableMapping[str, MutableMapping[str, List[str]]] = {}
     """
-    Map: <app_id, <subscription_id: task>>
-    Holds a reference for every Kubernetes#_watch() task created, keyed
-    by the app_id, followed by the subscription ID.
-
-    This helps in removing an active watch from an individual subscription.
+    Map: <namespace, <pod_name: [subscription_ids]>>
     """
 
     @classmethod
@@ -36,14 +32,25 @@ class Kubernetes:
         else:
             await config.load_kube_config()
         cls.v1 = client.CoreV1Api()
+        t = threading.Thread(target=cls.init_watch_all_pods)
+        t.setDaemon(True)
+        t.start()
+
+    @staticmethod
+    def resolve_namespace(app_id: str, pod_name: str) -> str:
+        if pod_name == 'gateway':
+            return 'asyncy-system'
+
+        return app_id
 
     @classmethod
-    async def get_container_id(cls, namespace: str, pod_name: str) -> str:
+    async def get_container_id(cls, app_id: str, pod_name: str) -> str:
         """
         Asyncy provisions Pods via a Deployment, with a single container
         in each Pod. This method returns the first container ID associated
         with this Pod.
         """
+        namespace = cls.resolve_namespace(app_id, pod_name)
         r = await cls.v1.list_namespaced_pod(namespace,
                                              label_selector=f'app={pod_name}')
         assert len(r.items) == 1
@@ -51,23 +58,21 @@ class Kubernetes:
         return pod.status.container_statuses[0].container_id
 
     @classmethod
-    async def ensure_one_pod(cls, namespace, label):
-        r = await cls.v1.list_namespaced_pod(namespace,
-                                             label_selector=f'app={label}')
-        assert len(r.items) == 1, \
-            f'{len(r.items)} pods found for label app={label}'
+    def init_watch_all_pods(cls):
+        """
+        Must be called in a new thread.
+        """
+        asyncio.set_event_loop(asyncio.new_event_loop())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(cls.watch_all_pods())
 
     @classmethod
-    async def _watch(cls, pod_name, namespace, sub_id):
-        logger.debug(f'Watching for Pod modified events '
-                     f'on {pod_name} for {sub_id}')
-
-        await cls.ensure_one_pod(namespace, pod_name)
-
-        w = watch.Watch()
-        try:
-            async for event in w.stream(cls.v1.list_namespaced_pod, namespace,
-                                        label_selector=f'app={pod_name}'):
+    async def watch_all_pods(cls):
+        while True:
+            logger.info('Watching for all Pod changes...')
+            v1 = client.CoreV1Api()
+            w = watch.Watch()
+            async for event in w.stream(v1.list_pod_for_all_namespaces):
                 et = event['type'].lower()
 
                 if et != 'modified':
@@ -75,49 +80,49 @@ class Kubernetes:
 
                 # Pod might have been modified.
                 s = event['object'].status.container_statuses
+
                 if s and s[0].state.running:
-                    logger.info(f'Potentially re-subscribing {sub_id}...')
-                    await Subscriptions.resubscribe(sub_id, s[0].container_id)
-        except asyncio.CancelledError:
-            w.stop()
-        finally:
-            logger.debug(f'Stopped watching for Pod changes '
-                         f'on {pod_name} for {sub_id} ')
+                    pod_name = event['raw_object']['metadata']['labels']['app']
+                    namespace = event['raw_object']['metadata']['namespace']
+                    logger.info(f'Potentially re-subscribing {pod_name} '
+                                f'for {namespace}...')
+
+                    pods = cls.subscriptions.get(namespace, {})
+                    sub_ids = pods.get(pod_name, [])
+                    sub_ids_copy = sub_ids.copy()  # Use this for iteration.
+
+                    for sub_id in sub_ids_copy:
+                        try:
+                            await Subscriptions.resubscribe(sub_id,
+                                                            s[0].container_id)
+                        except NotFoundException:  # Stale subscription.
+                            async with cls.sub_lock:
+                                sub_ids.remove(sub_id)
+
+            logger.debug(f'Stopped watching for Pod changes! Will restart...')
 
     @classmethod
-    async def create_watch(cls, pod_name, namespace, sub_id):
-        loop = asyncio.get_event_loop()
-        task = loop.create_task(cls._watch(pod_name, namespace, sub_id))
+    async def create_watch(cls, pod_name, app_id, sub_id):
+        namespace = cls.resolve_namespace(app_id, pod_name)
 
         async with cls.sub_lock:
             app_subs = cls.subscriptions.setdefault(namespace, {})
-            task_to_be_cancelled = app_subs.get(sub_id)
-            app_subs[sub_id] = task
-
-        # Ideally there will never be a pending watch task to be cancelled,
-        # as subscription IDs are unique. This is just in case, as we do
-        # not want to have unnecessary watches setup with Kubernetes.
-        if task_to_be_cancelled is not None:
-            task_to_be_cancelled.cancel()
+            sub_ids_for_pod_name = app_subs.setdefault(pod_name, [])
+            sub_ids_for_pod_name.append(sub_id)
 
     @classmethod
     async def remove_watches(cls, app_id: str):
+        # Warning: Do not resolve app_id to namespace here.
+        # We CANNOT delete asyncy-system under any circumstances.
         async with cls.sub_lock:
             subscriptions = cls.subscriptions.get(app_id)
             if subscriptions:
                 del cls.subscriptions[app_id]
 
-        if subscriptions:
-            for sub_id, task in subscriptions.items():
-                task.cancel()
-
     @classmethod
-    async def remove_watch(cls, app_id: str, sub_id: str):
+    async def remove_watch(cls, app_id: str, pod_name: str, sub_id: str):
+        namespace = cls.resolve_namespace(app_id, sub_id)
         async with cls.sub_lock:
-            subscriptions = cls.subscriptions.get(app_id, {})
-            task = subscriptions.get(sub_id)
-            if task:
-                del subscriptions[sub_id]
-
-        if task:
-            task.cancel()
+            subscriptions = cls.subscriptions.get(namespace, {})
+            sub_ids = subscriptions.get(pod_name, [])
+            sub_ids.remove(sub_id)

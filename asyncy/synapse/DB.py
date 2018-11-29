@@ -6,6 +6,7 @@ import psycopg2
 
 from .Config import Config
 from .Entities import Subscription
+from .Exceptions import NotFoundException
 
 
 class DB:
@@ -44,7 +45,9 @@ class DB:
                         'from app_runtime.subscriptions '
                         'where uuid=%s', (sub_id,))
             r = cur.fetchone()
-            assert r is not None, 'Subscription not found!'
+            if r is None:
+                raise NotFoundException()
+
             return Subscription(
                 uuid=sub_id, app_uuid=r[1], container_id=r[2],
                 url=r[3], method=r[4], payload=r[5], pod_name=r[6])
@@ -61,7 +64,7 @@ class DB:
         try:
             # TODO: make this async/await
             cur.execute('update app_runtime.subscriptions '
-                        'set container_id=%s '
+                        'set k8s_container_id=%s '
                         'where uuid=%s',
                         (container_id, sub_id))
             conn.commit()
