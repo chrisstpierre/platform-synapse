@@ -111,6 +111,10 @@ class Kubernetes:
                     except NotFoundException:  # Stale subscription.
                         async with cls.sub_lock:
                             sub_ids.remove(sub_id)
+                    except BaseException as e:
+                        logger.error(f'Exception in resubscribe for '
+                                     f'pod_name={pod_name}; sub_id={sub_id}!',
+                                     exc_info=e)
 
         logger.debug(f'Stopped watching for Pod changes! Will restart...')
 
