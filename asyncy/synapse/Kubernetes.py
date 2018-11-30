@@ -90,7 +90,12 @@ class Kubernetes:
             s = event['object'].status.container_statuses
 
             if s and s[0].state.running:
-                pod_name = event['raw_object']['metadata']['labels']['app']
+                pod_name = event['raw_object']['metadata']['labels'].get('app')
+
+                if pod_name is None:
+                    # Not one of the pods controlled by Asyncy apps.
+                    continue
+
                 namespace = event['raw_object']['metadata']['namespace']
                 logger.info(f'Potentially re-subscribing {pod_name} '
                             f'for {namespace}...')
