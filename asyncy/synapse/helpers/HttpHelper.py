@@ -13,7 +13,10 @@ class HttpHelper:
         while attempts < tries:
             attempts = attempts + 1
             try:
-                return await http_client.fetch(url, **kwargs)
+                res = await http_client.fetch(url, **kwargs)
+                if int(res.code / 100) == 5:
+                    raise HTTPError(res.code, message='Response code is 5xx',
+                                    response=res)
             except HTTPError as e:
                 await asyncio.sleep(0.5)
                 logger.log_raw(
