@@ -69,37 +69,45 @@ class Kubernetes:
     @classmethod
     async def watch_all_pods(cls):
         while True:
-            logger.info('Watching for all Pod changes...')
-            v1 = client.CoreV1Api()
-            w = watch.Watch()
-            async for event in w.stream(v1.list_pod_for_all_namespaces):
-                et = event['type'].lower()
+            try:
+                await cls._watch_pods()
+            except BaseException as e:
+                logger.error('Exception in watching all pods! Will restart!',
+                             exc_info=e)
 
-                if et != 'modified':
-                    continue
+    @classmethod
+    async def _watch_pods(cls):
+        logger.info('Watching for all Pod changes...')
+        v1 = client.CoreV1Api()
+        w = watch.Watch()
+        async for event in w.stream(v1.list_pod_for_all_namespaces):
+            et = event['type'].lower()
 
-                # Pod might have been modified.
-                s = event['object'].status.container_statuses
+            if et != 'modified':
+                continue
 
-                if s and s[0].state.running:
-                    pod_name = event['raw_object']['metadata']['labels']['app']
-                    namespace = event['raw_object']['metadata']['namespace']
-                    logger.info(f'Potentially re-subscribing {pod_name} '
-                                f'for {namespace}...')
+            # Pod might have been modified.
+            s = event['object'].status.container_statuses
 
-                    pods = cls.subscriptions.get(namespace, {})
-                    sub_ids = pods.get(pod_name, [])
-                    sub_ids_copy = sub_ids.copy()  # Use this for iteration.
+            if s and s[0].state.running:
+                pod_name = event['raw_object']['metadata']['labels']['app']
+                namespace = event['raw_object']['metadata']['namespace']
+                logger.info(f'Potentially re-subscribing {pod_name} '
+                            f'for {namespace}...')
 
-                    for sub_id in sub_ids_copy:
-                        try:
-                            await Subscriptions.resubscribe(sub_id,
-                                                            s[0].container_id)
-                        except NotFoundException:  # Stale subscription.
-                            async with cls.sub_lock:
-                                sub_ids.remove(sub_id)
+                pods = cls.subscriptions.get(namespace, {})
+                sub_ids = pods.get(pod_name, [])
+                sub_ids_copy = sub_ids.copy()  # Use this for iteration.
 
-            logger.debug(f'Stopped watching for Pod changes! Will restart...')
+                for sub_id in sub_ids_copy:
+                    try:
+                        await Subscriptions.resubscribe(sub_id,
+                                                        s[0].container_id)
+                    except NotFoundException:  # Stale subscription.
+                        async with cls.sub_lock:
+                            sub_ids.remove(sub_id)
+
+        logger.debug(f'Stopped watching for Pod changes! Will restart...')
 
     @classmethod
     async def create_watch(cls, pod_name, app_id, sub_id):
