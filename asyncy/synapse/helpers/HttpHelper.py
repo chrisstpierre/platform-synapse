@@ -17,6 +17,7 @@ class HttpHelper:
                 if int(res.code / 100) == 5:
                     raise HTTPError(res.code, message='Response code is 5xx',
                                     response=res)
+                return res
             except HTTPError as e:
                 await asyncio.sleep(0.5)
                 logger.log_raw(
