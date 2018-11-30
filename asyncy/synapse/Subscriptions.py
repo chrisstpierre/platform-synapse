@@ -24,6 +24,8 @@ class Subscriptions:
                          app_uuid=app_id, container_id=container_id)
 
         await DB.insert_subscription(s)
+        logger.info(f'Created subscription for {pod_name}@{app_id}; '
+                    f'sub_id={sub_id}, sub_url={sub_url}, sub_body={sub_body}')
 
         await cls._subscribe(sub_url, sub_method, sub_body)
 
