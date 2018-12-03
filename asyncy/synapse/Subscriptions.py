@@ -39,8 +39,7 @@ class Subscriptions:
             },
             'body': json.dumps(payload)
         }
-        res = await HttpHelper.fetch_with_retry(30, logger, url,
-                                                client, kwargs)
+        res = await HttpHelper.fetch_with_retry(30, url, client, kwargs)
         if int(res.code / 100) != 2:
             raise Exception(f'Failed to subscribe to service! res={res}')
 
