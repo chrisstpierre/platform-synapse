@@ -3,11 +3,15 @@ import asyncio
 
 from tornado.httpclient import HTTPError
 
+from ..Logger import Logger
+
+logger = Logger.get('HttpHelper')
+
 
 class HttpHelper:
 
     @staticmethod
-    async def fetch_with_retry(tries, logger, url, http_client, kwargs):
+    async def fetch_with_retry(tries, url, http_client, kwargs):
         kwargs['raise_error'] = False
         attempts = 0
         while attempts < tries:
@@ -20,9 +24,9 @@ class HttpHelper:
                 return res
             except HTTPError as e:
                 await asyncio.sleep(0.5)
-                logger.log_raw(
-                    'error',
-                    f'Failed to call {url}; attempt={attempts}; err={str(e)}'
+                logger.error(
+                    f'Failed to call {url}; attempt={attempts}; err={str(e)}',
+                    exc_info=e
                 )
 
         raise HTTPError(500, message=f'Failed to call {url}!')
