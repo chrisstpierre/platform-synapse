@@ -8,10 +8,13 @@ import tornado.web
 from .DB import DB
 from .Entities import Subscription
 from .Kubernetes import Kubernetes
+from .Logger import Logger
 from .Subscriptions import Subscriptions
 from .handlers.ClearSubscriptions import ClearSubscriptions
 from .handlers.SubscriptionHandler import SubscriptionHandler
 from .handlers.UnsubscribeHandler import UnsubscribeHandler
+
+logger = Logger.get('App')
 
 
 def make_app():
@@ -31,8 +34,13 @@ async def init():
 
             if container_id != s.container_id:
                 await Subscriptions.resubscribe(s.uuid, container_id)
+        except BaseException as e:
+            logger.error(f'Failed to maintain subscription for '
+                         f'{s.uuid}@{s.pod_name}', exc_info=e)
         finally:
             await Kubernetes.create_watch(s.pod_name, s.app_uuid, s.uuid)
+
+    logger.info('Init complete!')
 
 
 def sig_handler(*args, **kwargs):
