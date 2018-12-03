@@ -40,6 +40,8 @@ async def init():
         finally:
             await Kubernetes.create_watch(s.pod_name, s.app_uuid, s.uuid)
 
+    logger.info('Init complete!')
+
 
 def sig_handler(*args, **kwargs):
     tornado.ioloop.IOLoop.instance().add_callback(shutdown)
