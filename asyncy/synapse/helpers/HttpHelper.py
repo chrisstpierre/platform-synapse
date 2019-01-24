@@ -19,6 +19,9 @@ class HttpHelper:
             try:
                 res = await http_client.fetch(url, **kwargs)
                 if int(res.code / 100) == 5:
+                    if res.code == 599:
+                        logger.error(f'599 error for {url}: {res.reason}',
+                                     exc_info=res.error)
                     raise HTTPError(res.code, message='Response code is 5xx',
                                     response=res)
                 return res
